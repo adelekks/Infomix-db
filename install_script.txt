@@ -1,0 +1,116 @@
+U=$(/bin/whoami)
+if [[ $U != "root" ]] ; then
+   echo "Must be root to run this. exiting"
+   exit
+fi
+unset INFORMIXDIR
+unset PATH
+export INFORMIXDIR=/opt/informix1410FC10
+export TERMCAP=$INFORMIXDIR/etc/termcap
+ONCONFIG=""
+INFORMIXSERVER=""
+PATH=$INFORMIXDIR:/usr/local/bin:/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/home/informix:/local/bin:/home/informix/bin:$INFORMIXDIR/bin
+export PATH
+
+
+
+func01()
+{
+mkdir -p $INFORMIXDIR
+chown informix:informix $INFORMIXDIR
+chmod 755 $INFORMIXDIR
+X=/data/edw/Informix/BINARIES_FC10 ## ONLY for Desmond Campbell & server host is aotxdb01.aotx.gtwy.dcn(156.119.56.153) ##
+cp $X/INFORMIX_EE_License_Ins_14.10.FC1.zip $X/ibm.ids.14.10.FC10.LNX.tar $X/ibm.csdk.4.50.FC10.LNX.tar $X/jdbc-4.50.10-javadoc.jar $X/ids_install.properties $INFORMIXDIR
+cd $INFORMIXDIR
+chown informix:informix INFORMIX_EE_License_Ins_14.10.FC1.zip ibm.ids.14.10.FC10.LNX.tar ibm.csdk.4.50.FC10.LNX.tar jdbc-4.50.10-javadoc.jar ids_install.properties
+chmod 664 INFORMIX_EE_License_Ins_14.10.FC1.zip ibm.ids.14.10.FC10.LNX.tar ibm.csdk.4.50.FC10.LNX.tar jdbc-4.50.10-javadoc.jar ids_install.properties
+}
+func01
+
+
+func02()
+{
+# Make the /tmp file system executable temporary
+mount -o "remount,exec"  /tmp
+
+# Turn off selinux temporary
+if [ "$SEL" = "Enforcing" ] ; then
+    touch /var/tmp/ao_informix_enforcing
+    /usr/sbin/setenforce 0
+fi   
+
+# Make sure the informix user and group exist
+getent group informix > /dev/null || /usr/sbin/groupadd -r -g 437 informix
+/usr/sbin/useradd -r -m -d /home/informix -c "Informix User" -u 437 -g informix informix >/dev/null 2>&1
+usermod -G disk informix >/dev/null 2>&1
+
+# Link RHEL8 library to RHEL7 for informix 12 and Informix 14 requirement.
+if ! [ -f /usr/lib64/libncurses.so.5 ]; then
+    ln -s /usr/lib64/libncurses.so.6.1 /usr/lib64/libncurses.so.5
+fi
+if ! [ -f /usr/lib64/libtinfo.so.5 ]; then
+    ln -s /usr/lib64/libtinfo.so.6.1 /usr/lib64/libtinfo.so.5
+fi
+}
+func02
+
+
+
+func03()
+{
+cd $INFORMIXDIR
+# Install Informix Database
+unzip INFORMIX_EE_License_Ins_14.10.FC1.zip # must be done
+tar -xvpf ibm.ids.14.10.FC10.LNX.tar  # tar of tar
+tar -xvpf ibm.ids.14.10.FC10.LNX.tar  # second time for the tar
+./ids_install -f $INFORMIXDIR/ids_install.properties -i silent -DLICENSE_ACCEPTED=TRUE
+RET_CODE=$?
+if [[ $RET_CODE -ne 0 ]] ; then
+   echo "ERROR. Aborting"
+   exit 
+fi
+
+# Install gskit
+$INFORMIXDIR/gskit/installgskit
+
+# Install enterprise liscense
+$INFORMIXDIR/jvm/jre/bin/java -jar $INFORMIXDIR/ee_edition.jar -i silent -DLICENSE_ACCEPTED=TRUE
+
+# Install CSDK Software
+tar -xvf $INFORMIXDIR/ibm.csdk.4.50.FC10.LNX.tar  # tar of tar
+tar -xvf $INFORMIXDIR/ibm.csdk.4.50.FC10.LNX.tar  # second time for the tar
+./installclientsdk -i silent -DLICENSE_ACCEPTED=TRUE -DUSER_INSTALL_DIR=$INFORMIXDIR
+RET_CODE=$?
+if [[ $RET_CODE -ne 0 ]] ; then
+   echo "ERROR. Aborting"
+   exit 
+fi
+
+# Install Java Database Drivers Connectivity API
+$INFORMIXDIR/jvm/jre/bin/java -jar $INFORMIXDIR/jdbc-4.50.10-javadoc.jar # HELP ! getting error "no main manifest attribute, in jdbc-4.50.10-javadoc.jar"
+# NEED HELP, with no main manifest attribute, in java jar file". I do not think its the java -its the java jar file.
+
+mkdir -p Install_Log
+chown informix:informix *.log Install_Log
+mv $INFORMIXDIR/*.log $INFORMIXDIR/Install_Log/
+}
+func03
+
+
+func04()
+{
+# Undo temporary changes
+mount -o remount,noexec  /tmp
+
+if [ -f /var/tmp/ao_informix_enforcing ]; then
+    /usr/sbin/setenforce 1
+    rm /var/tmp/ao_informix_enforcing
+fi
+
+# Cleanup $INFORMIXDIR
+cd $INFORMIXDIR
+rm -f INFORMIX_EE_License_Ins_14.10.FC1.zip ibm.ids.14.10.FC10.LNX.tar ibm.csdk.4.50.FC10.LNX.tar jdbc-4.50.10-javadoc.jar ids_install.properties
+rm -rf ids_install ee_edition.jar installclientsdk uninstall
+}
+
+
