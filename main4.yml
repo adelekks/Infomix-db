@@ -1,0 +1,234 @@
+---
+- name: Create directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - /ifmx
+    - /ifmx/links
+    - /ifmx/config
+
+- name: Change ownership of directories
+  become: true
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: informix
+    group: informix
+    mode: "0755"
+  loop:
+    - /ifmx
+    - /ifmx/links
+    - /ifmx/config
+
+- name: Set CFGDIR variable
+  set_fact:
+    CFGDIR: /ifmx/config
+
+- name: Source .ifmx.env file
+  shell: ". ~informix/.ifmx.env"
+
+- name: Get short hostname
+  shell: "/bin/hostname -s"
+  register: short_host_output
+
+- name: Set SHORT_HOST variable
+  set_fact:
+    SHORT_HOST: "{{ short_host_output.stdout }}"
+
+- name: Get current ONCONFIG
+  shell: "echo $ONCONFIG"
+  register: cur_onconfig_output
+
+- name: Set CUR_ONCONFIG variable
+  set_fact:
+    CUR_ONCONFIG: "{{ cur_onconfig_output.stdout }}"
+
+- name: Get version of ONCONFIG
+  shell: "dbaccess -V | awk '{print $NF}'" #NF
+  register: ver_onconfig_output
+
+- name: Set VER_ONCONFIG variable
+  set_fact:
+    VER_ONCONFIG: "{{ ver_onconfig_output.stdout }}"
+
+- name: Copy sqlhosts file
+  become: true
+  copy:
+    src: "{{ INFORMIXDIR }}/etc/sqlhosts"
+    dest: "{{ CFGDIR }}/sqlhosts"
+    mode: "0644"
+
+- name: Copy ONCONFIG file
+  become: true
+  copy:
+    src: "{{ INFORMIXDIR }}/etc/{{ CUR_ONCONFIG }}"
+    dest: "{{ CFGDIR }}/onconfig.{{ SHORT_HOST }}.{{ VER_ONCONFIG }}"
+    mode: "0644"
+
+- name: Copy hosts.equiv file
+  become: true
+  copy:
+    src: "{{ INFORMIXDIR }}/etc/hosts.equiv"
+    dest: "{{ CFGDIR }}/hosts.equiv"
+    mode: "0644"
+
+- name: Copy SSL directory
+  become: true
+  command: "cp -Rp {{ INFORMIXDIR }}/ssl {{ CFGDIR }}/"
+  args:
+    creates: "{{ CFGDIR }}/ssl"
+
+- name: Copy alarmprogram.sh file
+  become: true
+  copy:
+    src: "{{ INFORMIXDIR }}/etc/alarmprogram.sh"
+    dest: "{{ CFGDIR }}/alarmprogram.sh"
+    mode: "0644"
+
+- name: Create conssl.cfg file
+  become: true
+  command: "touch {{ INFORMIXDIR }}/conssl.cfg"
+  args:
+    creates: "{{ INFORMIXDIR }}/conssl.cfg"
+
+- name: Copy conssl.cfg file
+  become: true
+  copy:
+    src: "{{ INFORMIXDIR }}/conssl.cfg"
+    dest: "{{ CFGDIR }}/conssl.cfg"
+    mode: "0644"
+
+- name: Create sm_versions file
+  become: true
+  command: "touch {{ INFORMIXDIR }}/sm_versions"
+  args:
+    creates: "{{ INFORMIXDIR }}/sm_versions"
+
+- name: Copy sm_versions file
+  become: true
+  copy:
+    src: "{{ INFORMIXDIR }}/sm_versions"
+    dest: "{{ CFGDIR }}/sm_versions"
+    mode: "0644"
+
+- name: Copy odbc* files
+  become: true
+  command: "{{ INFORMIXDIR }}/etc/odbc* {{ CFGDIR }}/"
+
+- name: Shutdown Informix database
+  become: true
+  command: "onmode -ky"
+
+- name: Clean Informix environment
+  become: true
+  command: "onclean -ky >/dev/null 2>&1"
+
+- name: Kill oninit process
+  become: true
+  shell: "ps -aef | grep oninit | grep -v 'grep' | awk '{print \"kill -9\", $2}' | sh"
+
+- name: Prevent Informix from restarting
+  become: true
+  command: "mv /opt/informix/bin/oninit /opt/informix/bin/oninit.DO_NOT_RESTART"
+
+- name: Rename informix directory
+  become: true
+  command: "mv /opt/informix /opt/informix1210FC13"
+
+- name: Create symbolic link for informix directory
+  become: true
+  file:
+    src: /opt/informix1410FC10
+    dest: /opt/informix
+    state: link
+
+- name: Move links directory
+  become: true
+  command: "mv /opt/informix1210FC13/links /opt/informix1410FC10/links"
+
+- name: Source .ifmx.env file again
+  shell: ". /home/informix/.ifmx.env"
+
+- name: Create symbolic link for sqlhosts file
+  become: true
+  file:
+    src: "{{ CFGDIR }}/sqlhosts"
+    dest: "{{ INFORMIXDIR }}/etc/sqlhosts"
+    state: link
+
+- name: Set NEW_ONCONFIG variable
+  set_fact:
+    NEW_ONCONFIG: "{{ CUR_ONCONFIG }}"
+
+- name: Create symbolic link for ONCONFIG file
+  become: true
+  file:
+    src: "{{ CFGDIR }}/{{ CUR_ONCONFIG }}"
+    dest: "{{ INFORMIXDIR }}/etc/{{ CUR_ONCONFIG }}"
+    state: link
+
+- name: Create symbolic link for hosts.equiv file
+  become: true
+  file:
+    src: "{{ CFGDIR }}/hosts.equiv"
+    dest: "{{ INFORMIXDIR }}/etc/hosts.equiv"
+    state: link
+
+- name: Create symbolic link for .rhosts file
+  become: true
+  file:
+    src: "{{ CFGDIR }}/hosts.equiv"
+    dest: /home/informix/.rhosts
+    state: link
+
+- name: Copy SSL directory (second time)
+  become: true
+  command: "cp -Rp {{ CFGDIR }}/ssl {{ INFORMIXDIR }}/"
+  args:
+    creates: "{{ INFORMIXDIR }}/ssl"
+
+- name: Move alarmprogram.sh file
+  become: true
+  command: "mv {{ INFORMIXDIR }}/etc/alarmprogram.sh {{ INFORMIXDIR }}/alarmprogram1410FC10_original.sh"
+
+- name: Set NEW_ALARMPROGRAM variable
+  set_fact:
+    NEW_ALARMPROGRAM: "{{ CFGDIR }}/alarmprogram.sh"
+
+- name: Create symbolic link for alarmprogram.sh file
+  become: true
+  file:
+    src: "{{ CFGDIR }}/{{ NEW_ALARMPROGRAM }}"
+    dest: "{{ INFORMIXDIR }}/etc/alarmprogram.sh"
+    state: link
+
+- name: Create symbolic link for conssl.cfg file
+  become: true
+  file:
+    src: "{{ CFGDIR }}/conssl.cfg"
+    dest: "{{ INFORMIXDIR }}/etc/conssl.cfg"
+    state: link
+
+- name: Create symbolic link for sm_versions file
+  become: true
+  file:
+    src: "{{ CFGDIR }}/sm_versions"
+    dest: "{{ INFORMIXDIR }}/etc/sm_versions"
+    state: link
+
+- name: Source .ifmx.env file one more time
+  shell: ". /home/informix/.ifmx.env"
+
+- name: Start Informix database
+  become: true
+  command: "oninit"
+
+- name: Wait for Informix to start up
+  pause:
+    seconds: 30
+
+- name: Check database status
+  become: true
+  command: "onstat -"
