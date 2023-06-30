@@ -50,11 +50,9 @@ fi
 
 #Create new LV Filesystem for Infomix DB
 echo "Create LV: ${LV} with PV: /dev/${DISK}1"
-lvcreate -L 10GB -n ${LV} ${VG}
+lvcreate -l 100%FREE -n ${LV} ${VG}
 mkfs.ext4 /dev/${VG}/${LV}
 echo "Logical Volume ${LV} Created"
 mkdir -p /ifmx 
 echo /dev/${VG}/${LV}     /ifmx     ext4    defaults        0 0  | cat >> /etc/fstab
 mount -a
-#echo "Extending LV: /dev/$VG/$LV with PV: /dev/${DISK}1"
-#lvextend --resizefs /dev/$VG/$LV /dev/${DISK}1
